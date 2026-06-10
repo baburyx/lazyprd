@@ -1,0 +1,13 @@
+.DS_Store
+
+# Build artifacts
+/prd-tui
+/bin/
+/dist/
+
+# Test artifacts
+/coverage.out
+
+# Local editor/system files
+*.swp
+*.swo
