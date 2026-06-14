@@ -54,3 +54,53 @@ func TestViewFitsWindowGeometry(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactLayoutShowsFocusedPRDPicker(t *testing.T) {
+	m := testModelWithTwoPRDs(t)
+
+	m.focus = focusPRDs
+	m.width = 60
+	m.height = 22
+	m.ensureVisible()
+	view := m.View()
+	if !strings.Contains(view, "PRDs 2") {
+		t.Fatalf("narrow PRD focus should show PRD picker:\n%s", view)
+	}
+	if strings.Contains(view, "Task Preview") {
+		t.Fatalf("narrow PRD focus should not show preview pane:\n%s", view)
+	}
+
+	m.width = 90
+	m.height = 24
+	m.ensureVisible()
+	view = m.View()
+	if !strings.Contains(view, "PRDs 2") || !strings.Contains(view, "Outline / Tasks") {
+		t.Fatalf("medium PRD focus should show PRD picker and tasks:\n%s", view)
+	}
+}
+
+func testModelWithTwoPRDs(t *testing.T) model {
+	t.Helper()
+	project := t.TempDir()
+	path1 := writePRD(t, project, "one", "# One\n\n## Implementation Tasks\n\n- [ ] first\n")
+	path2 := writePRD(t, project, "two", "# Two\n\n## Implementation Tasks\n\n- [ ] second\n")
+	doc1, err := parsePRD(path1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc2, err := parsePRD(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model{
+		project: project,
+		prds: []PRDSummary{
+			{Path: path1, Slug: doc1.Slug, Title: doc1.Title, Total: len(doc1.Tasks), Document: doc1},
+			{Path: path2, Slug: doc2.Slug, Title: doc2.Title, Total: len(doc2.Tasks), Document: doc2},
+		},
+		focus:  focusMiddle,
+		status: "loaded",
+	}
+	m.selectDefaultMiddle()
+	return m
+}

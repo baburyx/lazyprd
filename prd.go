@@ -80,6 +80,25 @@ func discoverPRDs(project string) ([]PRDSummary, error) {
 	return summaries, nil
 }
 
+func prdProjectSignature(project string) (string, error) {
+	pattern := filepath.Join(project, ".scratch", "*", "PRD.md")
+	paths, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(paths)
+
+	var b strings.Builder
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "%s\t%d\t%d\n", path, info.Size(), info.ModTime().UnixNano())
+	}
+	return b.String(), nil
+}
+
 func parsePRD(path string) (*PRD, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

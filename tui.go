@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,21 +30,28 @@ type model struct {
 	previewTop int
 	focus      int
 
-	filtering   bool
-	filter      string
-	status      string
-	prompt      string
-	confirmQuit bool
+	filtering    bool
+	filter       string
+	status       string
+	prompt       string
+	prdSignature string
+	confirmQuit  bool
 }
 
 type reloadMsg struct {
-	prds   []PRDSummary
-	status string
-	err    error
+	prds      []PRDSummary
+	status    string
+	signature string
+	err       error
 }
 
 type copyMsg struct {
 	err error
+}
+
+type watchMsg struct {
+	signature string
+	err       error
 }
 
 type footerPair struct {
@@ -77,7 +85,7 @@ func newModel(project string) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return loadPRDs(m.project, "loaded")
+	return tea.Batch(loadPRDs(m.project, "loaded"), watchPRDs(m.project))
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -94,6 +102,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		oldPath := m.selectedPRDPath()
 		m.prds = msg.prds
+		m.prdSignature = msg.signature
 		m.restorePRDSelection(oldPath)
 		if oldPath == "" {
 			m.selectDefaultMiddle()
@@ -102,6 +111,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureVisible()
 		m.status = fmt.Sprintf("%s: %d PRD(s)", msg.status, len(m.prds))
 		return m, nil
+	case watchMsg:
+		if msg.err != nil {
+			return m, watchPRDs(m.project)
+		}
+		if m.prdSignature != "" && msg.signature != m.prdSignature {
+			return m, tea.Batch(loadPRDs(m.project, "auto-reloaded"), watchPRDs(m.project))
+		}
+		return m, watchPRDs(m.project)
 	case copyMsg:
 		if msg.err != nil {
 			m.status = msg.err.Error()
@@ -212,7 +229,19 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func loadPRDs(project, status string) tea.Cmd {
 	return func() tea.Msg {
 		prds, err := discoverPRDs(project)
-		return reloadMsg{prds: prds, status: status, err: err}
+		signature := ""
+		if err == nil {
+			signature, err = prdProjectSignature(project)
+		}
+		return reloadMsg{prds: prds, status: status, signature: signature, err: err}
+	}
+}
+
+func watchPRDs(project string) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(2 * time.Second)
+		signature, err := prdProjectSignature(project)
+		return watchMsg{signature: signature, err: err}
 	}
 }
 
@@ -229,17 +258,26 @@ func (m model) View() string {
 	bodyTotalHeight := max(3, m.height-3)
 	body := ""
 	if m.width < 70 {
-		if m.focus == focusPreview {
+		switch m.focus {
+		case focusPRDs:
+			body = m.renderPRDs(m.width, bodyTotalHeight)
+		case focusPreview:
 			body = m.renderPreview(m.width, bodyTotalHeight)
-		} else {
+		default:
 			body = m.renderMiddle(m.width, bodyTotalHeight)
 		}
 	} else if m.width < 110 {
-		midW := clamp(m.width*46/100, 34, 54)
-		rightW := max(30, m.width-midW)
-		middle := m.renderMiddle(midW, bodyTotalHeight)
-		right := m.renderPreview(rightW, bodyTotalHeight)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, middle, right)
+		leftW := clamp(m.width*40/100, 28, 42)
+		rightW := max(30, m.width-leftW)
+		if m.focus == focusPRDs {
+			left := m.renderPRDs(leftW, bodyTotalHeight)
+			right := m.renderMiddle(rightW, bodyTotalHeight)
+			body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+		} else {
+			middle := m.renderMiddle(leftW, bodyTotalHeight)
+			right := m.renderPreview(rightW, bodyTotalHeight)
+			body = lipgloss.JoinHorizontal(lipgloss.Top, middle, right)
+		}
 	} else {
 		leftTotal, midTotal, rightTotal := paneWidths(m.width)
 		left := m.renderPRDs(leftTotal, bodyTotalHeight)

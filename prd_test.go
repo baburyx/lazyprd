@@ -38,6 +38,43 @@ func TestDiscoverPRDsFindsScratchPRDsSortedByModTime(t *testing.T) {
 	}
 }
 
+func TestPRDProjectSignatureChangesWhenPRDChanges(t *testing.T) {
+	project := t.TempDir()
+	path := writePRD(t, project, "feature", "# Feature\n\n## Implementation Tasks\n\n- [ ] one\n")
+
+	before, err := prdProjectSignature(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == "" {
+		t.Fatal("signature should include existing PRD")
+	}
+
+	if err := os.WriteFile(path, []byte("# Feature\n\n## Implementation Tasks\n\n- [x] one\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	changedTime := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, changedTime, changedTime); err != nil {
+		t.Fatal(err)
+	}
+	after, err := prdProjectSignature(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("signature did not change after PRD file changed")
+	}
+
+	writePRD(t, project, "other", "# Other\n")
+	withNewPRD, err := prdProjectSignature(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after == withNewPRD {
+		t.Fatal("signature did not change after PRD file was added")
+	}
+}
+
 func TestParsePRDExtractsHeadingsAndOnlyImplementationTasks(t *testing.T) {
 	project := t.TempDir()
 	path := writePRD(t, project, "feature", strings.Join([]string{
@@ -139,7 +176,7 @@ func TestGenerateTaskPromptIncludesRequiredContext(t *testing.T) {
 	}
 
 	prompt := generateTaskPrompt(project, doc, 0)
-	for _, want := range []string{"selected task", "Problem context", "Problem details.", "Implementation context", "Use Go.", "Testing expectations", "Run go test.", "nearby task"} {
+	for _, want := range []string{"selected task", "Problem context", "Problem details.", "Implementation context", "Use Go.", "Testing expectations", "Run go test.", "nearby task", "marking only the selected task checkbox as done", "leave the checkbox unchecked"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}

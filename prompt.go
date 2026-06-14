@@ -34,6 +34,8 @@ func generateTaskPrompt(project string, doc *PRD, taskIndex int) string {
 	b.WriteString("- Prefer the smallest correct change.\n")
 	b.WriteString("- Preserve unrelated user changes.\n")
 	b.WriteString("- Run focused verification and report what passed or why it could not be run.\n")
+	b.WriteString("- After implementation and verification, update the PRD file above by marking only the selected task checkbox as done.\n")
+	b.WriteString("- If the task cannot be completed, leave the checkbox unchecked and explain the blocker.\n")
 	return b.String()
 }
 
