@@ -160,14 +160,12 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "backspace", "ctrl+h":
 			if len(m.filter) > 0 {
 				m.filter = m.filter[:len(m.filter)-1]
-				m.clampCursors()
-				m.ensureVisible()
+				m.updateSearch()
 			}
 		default:
 			if len(msg.Runes) > 0 {
 				m.filter += string(msg.Runes)
-				m.clampCursors()
-				m.ensureVisible()
+				m.updateSearch()
 			}
 		}
 		return m, nil
@@ -194,19 +192,21 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(1)
 	case "ctrl+k", "k", "up":
 		m.move(-1)
-	case "pgdown":
+	case "ctrl+d", "pgdown":
 		m.move(8)
-	case "pgup":
+	case "ctrl+u", "pgup":
 		m.move(-8)
+	case "}":
+		m.movePreviewBlock(1)
+	case "{":
+		m.movePreviewBlock(-1)
 	case "g", "home":
 		m.moveToStart()
 	case "G", "end":
 		m.moveToEnd()
 	case "/":
-		if m.focus != focusPreview {
-			m.filtering = true
-			m.filter = ""
-		}
+		m.filtering = true
+		m.filter = ""
 	case "esc":
 		m.prompt = ""
 		m.filter = ""
@@ -413,11 +413,20 @@ func (m model) renderStatus(width int) string {
 	}
 	mode := statusModeStyle.Render(strings.ToUpper(m.focusName()))
 	pairs := []footerPair{{"j/k", "move"}, {"tab", "focus"}, {"/", "filter"}, {"space", "toggle"}, {"p", "prompt"}, {"y", "copy"}, {"r", "reload"}, {"q", "quit"}}
+	if m.focus == focusPreview {
+		pairs = []footerPair{{"j/k", "scroll"}, {"{ }", "block"}, {"ctrl+u/d", "page"}, {"/", "search"}, {"g/G", "top/end"}, {"q", "quit"}}
+	}
 	if width < 96 {
 		pairs = []footerPair{{"j/k", "move"}, {"tab", "focus"}, {"/", "filter"}, {"space", "toggle"}, {"p", "prompt"}, {"q", "quit"}}
+		if m.focus == focusPreview {
+			pairs = []footerPair{{"j/k", "scroll"}, {"{ }", "block"}, {"/", "search"}, {"q", "quit"}}
+		}
 	}
 	if width < 70 {
 		pairs = []footerPair{{"j/k", "move"}, {"tab", "focus"}, {"space", "toggle"}, {"q", "quit"}}
+		if m.focus == focusPreview {
+			pairs = []footerPair{{"j/k", "scroll"}, {"{ }", "block"}, {"/", "search"}, {"q", "quit"}}
+		}
 	}
 	if m.prompt != "" {
 		pairs = []footerPair{{"y", "copy prompt"}, {"esc", "close"}, {"j/k", "scroll"}, {"tab", "focus"}, {"q", "quit"}}
@@ -531,6 +540,76 @@ func (m *model) moveToEnd() {
 		return
 	}
 	m.move(100000)
+}
+
+func (m *model) movePreviewBlock(direction int) {
+	if m.focus != focusPreview {
+		return
+	}
+	rows := m.previewRows()
+	if len(rows) == 0 {
+		return
+	}
+	current := clamp(m.previewTop, 0, len(rows)-1)
+	if direction > 0 {
+		for i := current + 1; i < len(rows); i++ {
+			if isPreviewBoundary(rows[i]) {
+				m.previewTop = i
+				return
+			}
+		}
+		m.previewTop = len(rows) - 1
+		return
+	}
+	for i := current - 1; i >= 0; i-- {
+		if isPreviewBoundary(rows[i]) {
+			m.previewTop = i
+			return
+		}
+	}
+	m.previewTop = 0
+}
+
+func (m *model) updateSearch() {
+	if m.focus == focusPreview {
+		m.jumpToPreviewSearch()
+		return
+	}
+	m.clampCursors()
+	m.ensureVisible()
+}
+
+func (m *model) jumpToPreviewSearch() {
+	query := strings.ToLower(strings.TrimSpace(m.filter))
+	if query == "" {
+		return
+	}
+	rows := m.previewRows()
+	for i, row := range rows {
+		if strings.Contains(strings.ToLower(row), query) {
+			m.previewTop = i
+			m.status = "preview match"
+			return
+		}
+	}
+	m.status = "no preview match"
+}
+
+func (m model) previewRows() []string {
+	width := max(20, m.width)
+	if m.width >= 110 {
+		_, _, right := paneWidths(m.width)
+		width = right
+	} else if m.width >= 70 && m.focus != focusPRDs {
+		leftW := clamp(m.width*40/100, 28, 42)
+		width = max(30, m.width-leftW)
+	}
+	return formatPreview(m.previewText(), max(1, width-2))
+}
+
+func isPreviewBoundary(row string) bool {
+	trimmed := strings.TrimSpace(row)
+	return trimmed == "" || strings.Contains(trimmed, "#")
 }
 
 func (m model) toggleSelectedTask() (tea.Model, tea.Cmd) {

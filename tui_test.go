@@ -79,6 +79,33 @@ func TestCompactLayoutShowsFocusedPRDPicker(t *testing.T) {
 	}
 }
 
+func TestPreviewVimMotionsAndSearch(t *testing.T) {
+	m := testModelWithTwoPRDs(t)
+	m.focus = focusPreview
+	m.width = 90
+	m.height = 24
+	m.ensureVisible()
+
+	m.movePreviewBlock(1)
+	if m.previewTop == 0 {
+		t.Fatal("expected } to move preview down to next block")
+	}
+
+	m.movePreviewBlock(-1)
+	if m.previewTop != 0 {
+		t.Fatalf("expected { to move preview back to top, got %d", m.previewTop)
+	}
+
+	m.filter = "nearby"
+	m.jumpToPreviewSearch()
+	if m.previewTop == 0 {
+		t.Fatal("expected preview search to jump to matching content")
+	}
+	if m.status != "preview match" {
+		t.Fatalf("status = %q, want preview match", m.status)
+	}
+}
+
 func testModelWithTwoPRDs(t *testing.T) model {
 	t.Helper()
 	project := t.TempDir()
